@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Merkle Ledger</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #080b0f;
+    --surface: #0d1117;
+    --border: #1e2a38;
+    --accent: #00f5a0;
+    --accent2: #00b4d8;
+    --warn: #ff6b6b;
+    --text: #c9d1d9;
+    --muted: #4a5568;
+    --font-mono: 'Space Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0,245,160,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,245,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+  .glow-orb {
+    position: fixed; width: 600px; height: 600px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,245,160,0.06) 0%, transparent 70%);
+    top: -200px; left: -200px; pointer-events: none; z-index: 0;
+    animation: drift 12s ease-in-out infinite alternate;
+  }
+  @keyframes drift { to { transform: translate(300px, 200px); } }
+  .container { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 32px 0 48px; border-bottom: 1px solid var(--border); margin-bottom: 48px; }
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logo-icon { width: 40px; height: 40px; border: 1px solid var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .logo-icon::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(0,245,160,0.15), transparent); }
+  .logo-icon svg { position: relative; z-index: 1; }
+  .logo-text { font-family: var(--font-display); font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #fff; }
+  .logo-text span { color: var(--accent); }
+  .status-pill { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); padding: 6px 14px; border-radius: 100px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+  .status-dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 48px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; transition: border-color 0.2s; }
+  .stat-card:hover { border-color: rgba(0,245,160,0.3); }
+  .stat-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0; transition: opacity 0.3s; }
+  .stat-card:hover::after { opacity: 1; }
+  .stat-label { font-size: 10px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; }
+  .stat-value { font-family: var(--font-display); font-size: 28px; font-weight: 800; color: #fff; }
+  .stat-value.accent { color: var(--accent); }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .panel-header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .panel-title { font-family: var(--font-display); font-size: 13px; font-weight: 700; color: #fff; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+  .panel-title .tag { font-family: var(--font-mono); font-size: 9px; background: rgba(0,245,160,0.1); color: var(--accent); border: 1px solid rgba(0,245,160,0.2); padding: 2px 8px; border-radius: 4px; letter-spacing: 1px; }
+  .panel-body { padding: 24px; }
+
+  label { display: block; font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  textarea, input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 12px 14px; outline: none; transition: border-color 0.2s, box-shadow 0.2s; resize: vertical; }
+  textarea:focus, input:focus { border-color: rgba(0,245,160,0.4); box-shadow: 0 0 0 3px rgba(0,245,160,0.06); }
+  textarea { min-height: 140px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 22px; border-radius: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; letter-spacing: 0.5px; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: #00e090; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,245,160,0.3); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-secondary { background: transparent; color: var(--accent2); border: 1px solid rgba(0,180,216,0.3); }
+  .btn-secondary:hover { background: rgba(0,180,216,0.08); border-color: var(--accent2); }
+  .btn-danger { background: transparent; color: var(--warn); border: 1px solid rgba(255,107,107,0.3); }
+  .btn-danger:hover { background: rgba(255,107,107,0.08); }
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; }
+
+  .response-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-size: 11px; line-height: 1.7; min-height: 80px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; transition: border-color 0.3s; }
+  .response-box.success { border-color: rgba(0,245,160,0.3); color: var(--accent); }
+  .response-box.error { border-color: rgba(255,107,107,0.3); color: var(--warn); }
+  .response-box.loading { color: var(--muted); }
+
+  .feed { display: flex; flex-direction: column; }
+  .feed-item { display: flex; align-items: flex-start; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); font-size: 11px; animation: slideIn 0.3s ease; transition: background 0.15s; }
+  .feed-item:hover { background: rgba(255,255,255,0.02); }
+  .feed-item:last-child { border-bottom: none; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+  .feed-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+  .feed-icon.log { background: rgba(0,245,160,0.1); }
+  .feed-icon.anchor { background: rgba(0,180,216,0.1); }
+  .feed-icon.verify { background: rgba(139,92,246,0.1); }
+  .feed-icon.error { background: rgba(255,107,107,0.1); }
+  .feed-content { flex: 1; min-width: 0; }
+  .feed-title { color: #fff; font-weight: 700; margin-bottom: 3px; }
+  .feed-meta { color: var(--muted); font-size: 10px; }
+  .feed-seq { color: var(--accent); font-size: 10px; font-weight: 700; }
+  .feed-empty { padding: 40px 24px; text-align: center; color: var(--muted); font-size: 11px; }
+
+  .spacer { height: 16px; }
+  .input-row { display: flex; gap: 10px; align-items: flex-end; }
+  .input-row input { margin-bottom: 0; }
+  .input-row .btn { flex-shrink: 0; white-space: nowrap; }
+  .proof-field { margin-bottom: 16px; }
+  .proof-field:last-child { margin-bottom: 0; }
+  .hash-display { font-size: 10px; color: var(--accent2); word-break: break-all; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 6px; line-height: 1.6; }
+  .epoch-badge { display: inline-block; background: rgba(0,180,216,0.1); color: var(--accent2); border: 1px solid rgba(0,180,216,0.2); border-radius: 4px; font-size: 10px; padding: 2px 8px; }
+  .verify-badge { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; font-family: var(--font-display); }
+  .verify-badge.valid { background: rgba(0,245,160,0.1); color: var(--accent); border: 1px solid rgba(0,245,160,0.3); }
+  .verify-badge.invalid { background: rgba(255,107,107,0.1); color: var(--warn); border: 1px solid rgba(255,107,107,0.3); }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="glow-orb"></div>
+<div class="container">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <path d="M11 2L3 6.5V15.5L11 20L19 15.5V6.5L11 2Z" stroke="#00f5a0" stroke-width="1.2" fill="none"/>
+          <path d="M11 2V20M3 6.5L19 15.5M19 6.5L3 15.5" stroke="#00f5a0" stroke-width="0.6" opacity="0.4"/>
+          <circle cx="11" cy="11" r="2" fill="#00f5a0" opacity="0.8"/>
+        </svg>
+      </div>
+      <div class="logo-text">merkle<span>ledger</span></div>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">checking...</span>
+    </div>
+  </header>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Messages Logged</div>
+      <div class="stat-value accent" id="statMessages">0</div>
+      <div class="stat-sub">this session</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Epochs Anchored</div>
+      <div class="stat-value" id="statEpochs">0</div>
+      <div class="stat-sub">Merkle roots on-chain</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pending in Batch</div>
+      <div class="stat-value" id="statPending">0</div>
+      <div class="stat-sub">until next anchor</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Network</div>
+      <div class="stat-value" style="font-size:18px;color:#a78bfa">TESTNET</div>
+      <div class="stat-sub">Hedera HCS</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Submit Log Entry <span class="tag">POST /log</span></div>
+      </div>
+      <div class="panel-body">
+        <label>JSON Payload</label>
+        <textarea id="logPayload" placeholder='{"event": "user_signup", "user_id": "u_001"}'></textarea>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="submitLog()" id="submitBtn">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M1 6l4 4 6-8" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            Submit to HCS
+          </button>
+          <button class="btn btn-secondary" onclick="fillSample()">Sample</button>
+        </div>
+        <div class="spacer"></div>
+        <label>Response</label>
+        <div class="response-box loading" id="logResponse">Awaiting submission...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Activity Feed <span class="tag">LIVE</span></div>
+        <button class="btn btn-danger" style="padding:6px 12px;font-size:10px" onclick="clearFeed()">Clear</button>
+      </div>
+      <div id="feedList" class="feed">
+        <div class="feed-empty">No activity yet. Submit a log entry to begin.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Inclusion Proof <span class="tag">GET /proof</span></div>
+      </div>
+      <div class="panel-body">
+        <label>Sequence Number</label>
+        <div class="input-row">
+          <input type="number" id="proofSeq" placeholder="e.g. 1" min="1"/>
+          <button class="btn btn-primary" onclick="getProof()">Fetch Proof</button>
+        </div>
+        <div class="spacer"></div>
+        <div id="proofResult" style="display:none">
+          <div class="proof-field">
+            <label>Payload Hash (SHA-256)</label>
+            <div class="hash-display" id="proofHash">—</div>
+          </div>
+          <div class="proof-field">
+            <label>Merkle Root</label>
+            <div class="hash-display" id="proofRoot">—</div>
+          </div>
+          <div class="proof-field">
+            <label>Epoch <span id="proofEpoch" class="epoch-badge">—</span></label>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px" id="proofRange">—</div>
+          </div>
+          <div class="proof-field">
+            <label>Proof Path (<span id="proofLen">0</span> hashes)</label>
+            <div class="response-box" id="proofPath" style="max-height:100px">—</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="verifyLoaded()">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6l3 3 5-5"/></svg>
+              Verify this proof
+            </button>
+            <button class="btn btn-secondary" onclick="copyProof()">Copy bundle</button>
+          </div>
+        </div>
+        <div id="proofEmpty" style="color:var(--muted);font-size:11px">
+          Proofs are available after a batch anchors on-chain (every 10 messages).
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Verify Proof Bundle <span class="tag">POST /verify</span></div>
+      </div>
+      <div class="panel-body">
+        <label>Proof Bundle (JSON)</label>
+        <textarea id="verifyPayload" placeholder="Paste a proof bundle here, or use 'Verify this proof' above..." style="min-height:180px"></textarea>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="verifyProof()">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6l3 3 5-5"/></svg>
+            Verify
+          </button>
+        </div>
+        <div class="spacer"></div>
+        <div id="verifyResult" style="display:none"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = '';
+let feedItems = [];
+let currentProof = null;
+let msgCount = 0, epochCount = 0, pendingCount = 0;
+
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    if (r.ok) {
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusText').textContent = 'online';
+    } else { document.getElementById('statusText').textContent = 'degraded'; }
+  } catch { document.getElementById('statusText').textContent = 'offline'; }
+}
+
+function updateStats() {
+  document.getElementById('statMessages').textContent = msgCount;
+  document.getElementById('statEpochs').textContent = epochCount;
+  document.getElementById('statPending').textContent = pendingCount;
+}
+
+function addFeedItem(type, title, meta, seq) {
+  const icons = { log: '📡', anchor: '⚓', verify: '✅', error: '❌' };
+  feedItems.unshift({ type, title, meta, seq, icon: icons[type] || '•', time: new Date() });
+  const el = document.getElementById('feedList');
+  if (feedItems.length === 1) el.innerHTML = '';
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  item.innerHTML = `
+    <div class="feed-icon ${type}">${icons[type]}</div>
+    <div class="feed-content">
+      <div class="feed-title">${title}</div>
+      <div class="feed-meta">${meta} · ${new Date().toLocaleTimeString()}</div>
+    </div>
+    ${seq ? `<div class="feed-seq">#${seq}</div>` : ''}`;
+  el.insertBefore(item, el.firstChild);
+  if (feedItems.length > 20) el.removeChild(el.lastChild);
+}
+
+function clearFeed() {
+  feedItems = [];
+  document.getElementById('feedList').innerHTML = '<div class="feed-empty">No activity yet. Submit a log entry to begin.</div>';
+}
+
+const samples = [
+  '{\n  "event": "user_signup",\n  "user_id": "u_001",\n  "email": "alice@example.com"\n}',
+  '{\n  "event": "kyc_verified",\n  "user_id": "u_001",\n  "level": "tier_2"\n}',
+  '{\n  "event": "deposit",\n  "user_id": "u_001",\n  "amount": 5000,\n  "currency": "USD"\n}',
+  '{\n  "event": "trade_executed",\n  "pair": "BTC/USD",\n  "side": "buy",\n  "qty": 0.25\n}',
+  '{\n  "event": "suspicious_activity",\n  "user_id": "u_004",\n  "flag": "multiple_failed_logins"\n}',
+];
+let sampleIdx = 0;
+function fillSample() {
+  document.getElementById('logPayload').value = samples[sampleIdx % samples.length];
+  sampleIdx++;
+}
+
+async function submitLog() {
+  const raw = document.getElementById('logPayload').value.trim();
+  if (!raw) return;
+  let payload;
+  try { payload = JSON.parse(raw); } catch { setResponse('logResponse', '✗ Invalid JSON', 'error'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  setResponse('logResponse', 'Submitting to Hedera HCS...', 'loading');
+
+  try {
+    const r = await fetch(`${API}/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (r.ok) {
+      setResponse('logResponse', JSON.stringify(data, null, 2), 'success');
+      msgCount++;
+      pendingCount++;
+      updateStats();
+      addFeedItem('log', `${payload.event || 'message'} logged`, `seq #${data.sequence_number || '?'}`, data.sequence_number);
+    } else {
+      setResponse('logResponse', JSON.stringify(data, null, 2), 'error');
+      addFeedItem('error', 'Submission failed', data.detail || 'unknown error');
+    }
+  } catch (e) {
+    setResponse('logResponse', `Network error: ${e.message}`, 'error');
+  } finally { btn.disabled = false; }
+}
+
+async function getProof() {
+  const seq = document.getElementById('proofSeq').value;
+  if (!seq) return;
+  try {
+    const r = await fetch(`${API}/proof/${seq}`);
+    const data = await r.json();
+    if (r.ok) {
+      currentProof = data;
+      document.getElementById('proofResult').style.display = 'block';
+      document.getElementById('proofEmpty').style.display = 'none';
+      document.getElementById('proofHash').textContent = data.payload_hash;
+      document.getElementById('proofRoot').textContent = data.merkle_root;
+      document.getElementById('proofEpoch').textContent = `epoch ${data.epoch_id}`;
+      document.getElementById('proofRange').textContent = `Messages ${data.epoch_range.first} → ${data.epoch_range.last}`;
+      document.getElementById('proofLen').textContent = data.merkle_proof.length;
+      document.getElementById('proofPath').textContent = data.merkle_proof.map((h, i) => `[${i}] ${h}`).join('\n');
+      epochCount = Math.max(epochCount, data.epoch_id);
+      pendingCount = 0;
+      updateStats();
+      addFeedItem('anchor', `Proof fetched for #${seq}`, `epoch ${data.epoch_id} · ${data.merkle_proof.length} hashes`, seq);
+    } else {
+      document.getElementById('proofResult').style.display = 'none';
+      document.getElementById('proofEmpty').style.display = 'block';
+      document.getElementById('proofEmpty').textContent = data.detail || 'Proof not available yet.';
+      addFeedItem('error', `No proof for #${seq}`, 'batch not yet anchored');
+    }
+  } catch (e) { addFeedItem('error', 'Proof fetch failed', e.message); }
+}
+
+function verifyLoaded() {
+  if (!currentProof) return;
+  document.getElementById('verifyPayload').value = JSON.stringify(currentProof, null, 2);
+  document.querySelector('.main-grid').scrollIntoView({ behavior: 'smooth' });
+  verifyProof();
+}
+
+function copyProof() {
+  if (!currentProof) return;
+  navigator.clipboard.writeText(JSON.stringify(currentProof, null, 2));
+  addFeedItem('verify', 'Proof bundle copied', 'to clipboard');
+}
+
+async function verifyProof() {
+  const raw = document.getElementById('verifyPayload').value.trim();
+  if (!raw) return;
+  let bundle;
+  try { bundle = JSON.parse(raw); } catch { return; }
+  try {
+    const r = await fetch(`${API}/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw });
+    const data = await r.json();
+    const el = document.getElementById('verifyResult');
+    el.style.display = 'block';
+    if (data.valid) {
+      el.innerHTML = `
+        <div class="verify-badge valid">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8l4 4 8-8"/></svg>
+          PROOF VALID — cryptographically verified
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.8">
+          Message #${bundle.sequence_number} exists in epoch ${bundle.epoch_id}.<br/>
+          Merkle root confirmed on anchor topic <span style="color:var(--accent2)">${bundle.anchor_topic_id}</span>.
+        </div>`;
+      addFeedItem('verify', `Proof #${bundle.sequence_number} verified`, 'cryptographic check passed');
+    } else {
+      el.innerHTML = `<div class="verify-badge invalid">✗ PROOF INVALID — tampered or malformed</div>`;
+      addFeedItem('error', 'Proof invalid', 'verification failed');
+    }
+  } catch (e) { addFeedItem('error', 'Verify failed', e.message); }
+}
+
+function setResponse(id, text, type) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = `response-box ${type}`;
+}
+
+checkHealth();
+</script>
+</body>
+</html>
